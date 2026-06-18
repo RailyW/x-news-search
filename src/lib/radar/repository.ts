@@ -8,7 +8,7 @@ import {
   radarProfileStates,
   radarRuns,
 } from "./schema";
-import { normalizeRadarProfilePatch } from "./profile";
+import { normalizeHandle, normalizeRadarProfilePatch } from "./profile";
 import type {
   RadarFeedItem,
   RadarFeedbackValue,
@@ -19,9 +19,11 @@ import type {
   RadarRunRecord,
   RadarSearchCandidate,
   RadarState,
+  RadarTrustedSource,
 } from "./types";
 
 const DEFAULT_PROFILE_ID = "default";
+const DEFAULT_REASON = "模型未提供命中原因。";
 
 type CreateRepositoryOptions = {
   databaseUrl?: string;
@@ -65,6 +67,36 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
+// isRecord 判断未知 JSON 是否为普通对象，便于从 rawResponse 中读取模型原始字段。
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// readRawString 从 rawResponse 中读取字符串字段，并统一 trim。
+function readRawString(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+// readRawNumber 从 rawResponse 中读取可选数值字段，缺失时保留 undefined。
+function readRawNumber(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+// readFirstRawNumber 按优先级读取多个候选分数字段，兼容 score 这类简写输出。
+function readFirstRawNumber(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = readRawNumber(record, key);
+
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 // clampScore 将模型评分限制在 0 到 1，避免异常分数影响前端展示。
 function clampScore(value: number) {
   if (!Number.isFinite(value)) {
@@ -72,6 +104,48 @@ function clampScore(value: number) {
   }
 
   return Math.min(1, Math.max(0, value));
+}
+
+// extractHandleFromXUrl 从 X 推文 URL 推断作者 handle，补足旧数据缺失 authorHandle 的情况。
+function extractHandleFromXUrl(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+
+    if (!parsedUrl.hostname.toLowerCase().endsWith("x.com")) {
+      return null;
+    }
+
+    return normalizeHandle(parsedUrl.pathname.split("/").filter(Boolean)[0]);
+  } catch {
+    return null;
+  }
+}
+
+// findTrustedSource 用归一化 handle 匹配当前画像中的高可信源配置。
+function findTrustedSource(handle: string | null, trustedSources: RadarTrustedSource[]) {
+  if (!handle) {
+    return null;
+  }
+
+  return trustedSources.find((source) => normalizeHandle(source.handle).toLowerCase() === handle.toLowerCase()) ?? null;
+}
+
+// resolveSourceType 对旧数据中的 unknown 做展示层回填：命中高可信源时展示 trusted_source。
+function resolveSourceType(sourceType: string, trustedSource: RadarTrustedSource | null): RadarFeedItem["sourceType"] {
+  if (sourceType === "trusted_source" || sourceType === "profile_match" || sourceType === "general_search") {
+    return sourceType;
+  }
+
+  return trustedSource ? "trusted_source" : "general_search";
+}
+
+// resolveScore 优先使用数据库中已归一化的正分数，旧数据为 0 时从 rawResponse 中回填。
+function resolveScore(storedScore: number, rawRecord: Record<string, unknown>, keys: string[]) {
+  if (storedScore > 0) {
+    return storedScore;
+  }
+
+  return clampScore(readFirstRawNumber(rawRecord, keys) ?? 0);
 }
 
 // rowToProfile 将 profile state 单行还原为完整画像文档。
@@ -97,23 +171,39 @@ function rowToProfile(row: typeof radarProfileStates.$inferSelect): RadarProfile
 }
 
 // rowToItem 将 SQLite 行转换为前端消费的 feed item。
-function rowToItem(row: typeof radarItems.$inferSelect): RadarFeedItem {
+function rowToItem(row: typeof radarItems.$inferSelect, trustedSources: RadarTrustedSource[] = []): RadarFeedItem {
+  const rawResponse = parseJson(row.rawResponseJson, null);
+  const rawRecord = isRecord(rawResponse) ? rawResponse : {};
+  const authorHandle = row.authorHandle ?? extractHandleFromXUrl(row.url);
+  const trustedSource = findTrustedSource(authorHandle, trustedSources);
+  const sourceType = resolveSourceType(row.sourceType, trustedSource);
+  const fallbackScore = readFirstRawNumber(rawRecord, ["score"]);
+
   return {
     id: row.id,
     runId: row.runId,
     url: row.url,
     title: row.title,
-    authorHandle: row.authorHandle,
+    authorHandle,
     publishedAt: row.publishedAt,
     summary: row.summary,
     rawText: row.rawText,
     tags: parseJson(row.tagsJson, []),
-    relevanceScore: row.relevanceScore,
-    importanceScore: row.importanceScore,
-    trustScore: row.trustScore,
-    reason: row.reason,
-    sourceType: row.sourceType as RadarFeedItem["sourceType"],
-    rawResponse: parseJson(row.rawResponseJson, null),
+    relevanceScore: resolveScore(row.relevanceScore, rawRecord, ["relevanceScore", "relevance_score", "score"]),
+    importanceScore: resolveScore(row.importanceScore, rawRecord, ["importanceScore", "importance_score", "score"]),
+    trustScore:
+      row.trustScore > 0
+        ? row.trustScore
+        : clampScore(readFirstRawNumber(rawRecord, ["trustScore", "trust_score"]) ?? trustedSource?.weight ?? fallbackScore ?? 0),
+    reason:
+      row.reason && row.reason !== DEFAULT_REASON
+        ? row.reason
+        : readRawString(rawRecord, "reason") ||
+          readRawString(rawRecord, "hitReason") ||
+          readRawString(rawRecord, "hit_reason") ||
+          row.reason,
+    sourceType,
+    rawResponse,
     feedback: row.feedback as RadarFeedbackValue | null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -311,7 +401,7 @@ export class RadarRepository {
     }
 
     const rows = await this.connection.db.select().from(radarItems);
-    return rows.filter((row) => urls.includes(row.url)).map(rowToItem);
+    return rows.filter((row) => urls.includes(row.url)).map((row) => rowToItem(row));
   }
 
   // addFeedback 保存用户反馈，并把条目的当前 feedback 字段更新为最新状态。
@@ -402,8 +492,8 @@ export class RadarRepository {
 
   // getState 汇总首页需要的画像、feed、待确认建议和最近运行记录。
   async getState(): Promise<RadarState> {
-    const [profile, itemRows, insightRows, runRows] = await Promise.all([
-      this.getProfile(),
+    const profile = await this.getProfile();
+    const [itemRows, insightRows, runRows] = await Promise.all([
       this.connection.db
         .select()
         .from(radarItems)
@@ -421,7 +511,7 @@ export class RadarRepository {
 
     return {
       profile,
-      items: itemRows.map(rowToItem),
+      items: itemRows.map((row) => rowToItem(row, profile.trustedSources)),
       pendingInsights: insightRows.map(rowToInsight),
       recentRuns: runRows.map(rowToRun),
     };

@@ -20,6 +20,8 @@
 5. `recordItemFeedback` 先保存用户反馈，再让 LLM 判断是否更新 working profile 或创建 pending insight。
 6. `decideInsight` 在用户接受时把 `proposedPatch` 合并进 stable profile；拒绝时只更新 insight 状态。
 
+读取 feed 状态时，仓储会对早期已经落库但字段不完整的条目做展示回填：如果数据库中的评分仍为 0，且 `rawResponse` 中存在 `score`，则用它填充相关度和重要性；如果 URL handle 命中当前高可信源，则用该来源权重填充可信度并把来源类型显示为 `trusted_source`；如果原始响应存在 `hitReason`，则替换默认的“模型未提供命中原因。”。
+
 ## 画像层次
 
 - `stableProfile`: 长期画像。只有用户在待确认视图接受 insight 后才更新，适合保存真正稳定的兴趣、偏好信号和避雷信号。

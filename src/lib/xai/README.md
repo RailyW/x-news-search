@@ -75,6 +75,8 @@ Radar 的 Chat Completions 模式仍不发送 `reasoning` 或 `reasoning_effort`
 
 `radar.ts` 解析结构化 JSON 后会再次做本地清理：丢弃缺少 URL/summary 的条目，限制评分到 0-1，清洗 profile patch，并把异常 `sourceType` 归为 `unknown`。
 
+模型偶尔会返回比 JSON schema 更短的字段，例如 `score` 和 `hitReason`，而不是 `relevanceScore`、`importanceScore`、`trustScore` 和 `reason`。Radar 客户端会把这些简写字段归一化：`score` 会作为相关度和重要性的 fallback，高可信源命中时会用配置权重填充可信度，`hitReason` 会作为命中原因展示，并会从 `x.com/{handle}/...` URL 中推断作者和高可信来源。
+
 ## 错误码
 
 - `invalid_query`: 查询为空或不合法。

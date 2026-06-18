@@ -127,4 +127,56 @@ describe("radar repository", () => {
       await repository.close();
     }
   });
+
+  it("读取状态时会从原始响应回填简写评分和来源", async () => {
+    const repository = await createRadarRepository({ databaseUrl: await createDatabaseUrl() });
+
+    try {
+      await repository.initializeProfile(profile);
+      const run = await repository.createRun({
+        queryPlan: {
+          generatedAt: "2026-06-18T00:00:00.000Z",
+          topics: profile.searchTopics,
+          trustedSources: profile.trustedSources,
+        },
+      });
+
+      await repository.upsertItems(run.id, [
+        {
+          url: "https://x.com/openai/status/2",
+          title: "https://x.com/openai/status/2",
+          authorHandle: null,
+          publishedAt: null,
+          summary: "OpenAI 发布新的 Agent 能力。",
+          rawText: null,
+          tags: ["OpenAI", "Agent"],
+          relevanceScore: 0,
+          importanceScore: 0,
+          trustScore: 0,
+          reason: "模型未提供命中原因。",
+          sourceType: "unknown",
+          rawResponse: {
+            url: "https://x.com/openai/status/2",
+            summary: "OpenAI 发布新的 Agent 能力。",
+            hitReason: "OpenAI 官方发布，命中高可信源与 Agent 主题。",
+            tags: ["OpenAI", "Agent"],
+            score: 0.87,
+          },
+        },
+      ]);
+
+      const state = await repository.getState();
+
+      expect(state.items[0]).toMatchObject({
+        authorHandle: "openai",
+        relevanceScore: 0.87,
+        importanceScore: 0.87,
+        trustScore: 1,
+        reason: "OpenAI 官方发布，命中高可信源与 Agent 主题。",
+        sourceType: "trusted_source",
+      });
+    } finally {
+      await repository.close();
+    }
+  });
 });

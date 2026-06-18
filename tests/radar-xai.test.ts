@@ -139,6 +139,51 @@ describe("createXaiRadarClient", () => {
     expect(result.items[0]?.url).toBe("https://x.com/openai/status/1");
   });
 
+  it("Responses 模式会兼容 score 和 hitReason 简写字段", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  items: [
+                    {
+                      url: "https://x.com/openai/status/2",
+                      summary: "OpenAI 发布新的 Agent 能力。",
+                      hitReason: "OpenAI 官方发布，命中高可信源与 Agent 主题。",
+                      tags: ["OpenAI", "Agent"],
+                      score: 0.87,
+                    },
+                  ],
+                  profileInsights: [],
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const client = createXaiRadarClient({
+      apiKey: "test-key",
+      apiEndpoint: "responses",
+      fetchImpl,
+    });
+
+    const result = await client.search(radarInput);
+
+    expect(result.items[0]).toMatchObject({
+      authorHandle: "openai",
+      relevanceScore: 0.87,
+      importanceScore: 0.87,
+      trustScore: 1,
+      reason: "OpenAI 官方发布，命中高可信源与 Agent 主题。",
+      sourceType: "trusted_source",
+    });
+  });
+
   it("Chat 模式会使用 response_format 和 search_parameters，且不发送 reasoning 字段", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       createJsonResponse({

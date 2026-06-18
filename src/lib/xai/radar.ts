@@ -8,9 +8,10 @@ import type {
   RadarFeedbackAnalysisInput,
   RadarGeneratedInsight,
   RadarItemSourceType,
+  RadarTrustedSource,
   RadarSearchCandidate,
 } from "@/lib/radar/types";
-import { normalizeRadarProfilePatch } from "@/lib/radar/profile";
+import { normalizeHandle, normalizeRadarProfilePatch } from "@/lib/radar/profile";
 
 const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
 const DEFAULT_TIMEOUT_MS = 90_000;
@@ -202,6 +203,25 @@ function readNumber(record: Record<string, unknown>, key: string) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+// readOptionalNumber 读取可选数值字段，用于区分“字段不存在”和“字段明确为 0”。
+function readOptionalNumber(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+// readFirstNumber 按优先级读取多个候选数值字段，兼容模型返回 score 这类简写字段。
+function readFirstNumber(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = readOptionalNumber(record, key);
+
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 // readStringArray 读取字符串数组并去除空标签。
 function readStringArray(record: Record<string, unknown>, key: string) {
   const value = record[key];
@@ -216,6 +236,30 @@ function readStringArray(record: Record<string, unknown>, key: string) {
 // clampScore 将模型返回分数限制到 0 到 1。
 function clampScore(value: number) {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+}
+
+// extractHandleFromXUrl 从 x.com 推文 URL 中推断作者 handle，补足模型未显式返回 authorHandle 的情况。
+function extractHandleFromXUrl(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+
+    if (!parsedUrl.hostname.toLowerCase().endsWith("x.com")) {
+      return null;
+    }
+
+    return normalizeHandle(parsedUrl.pathname.split("/").filter(Boolean)[0]);
+  } catch {
+    return null;
+  }
+}
+
+// findTrustedSource 用归一化 handle 匹配手动配置的高可信源。
+function findTrustedSource(handle: string | null, trustedSources: RadarTrustedSource[]) {
+  if (!handle) {
+    return null;
+  }
+
+  return trustedSources.find((source) => normalizeHandle(source.handle).toLowerCase() === handle.toLowerCase()) ?? null;
 }
 
 // buildStructuredFormat 生成 xAI Responses API 所需的 text.format 配置。
@@ -427,8 +471,19 @@ function normalizeSourceType(value: string): RadarItemSourceType {
   return "unknown";
 }
 
+// inferSourceType 优先使用模型返回的合法枚举；缺失时按高可信源推断，否则回退为 general_search。
+function inferSourceType(value: string, trustedSource: RadarTrustedSource | null): RadarItemSourceType {
+  const sourceType = normalizeSourceType(value);
+
+  if (sourceType !== "unknown") {
+    return sourceType;
+  }
+
+  return trustedSource ? "trusted_source" : "general_search";
+}
+
 // normalizeSearchCandidate 清理单条模型输出，URL 或 summary 缺失时丢弃。
-function normalizeSearchCandidate(value: unknown): RadarSearchCandidate | null {
+function normalizeSearchCandidate(value: unknown, trustedSources: RadarTrustedSource[]): RadarSearchCandidate | null {
   const record = isRecord(value) ? value : {};
   const url = readString(record, "url");
   const summary = readString(record, "summary");
@@ -437,19 +492,29 @@ function normalizeSearchCandidate(value: unknown): RadarSearchCandidate | null {
     return null;
   }
 
+  const authorHandle = readNullableString(record, "authorHandle") ?? extractHandleFromXUrl(url);
+  const trustedSource = findTrustedSource(authorHandle, trustedSources);
+  const fallbackScore = readFirstNumber(record, ["score"]);
+
   return {
     url,
     title: readString(record, "title") || url,
-    authorHandle: readNullableString(record, "authorHandle"),
+    authorHandle,
     publishedAt: readNullableString(record, "publishedAt"),
     summary,
     rawText: readNullableString(record, "rawText"),
     tags: readStringArray(record, "tags"),
-    relevanceScore: clampScore(readNumber(record, "relevanceScore")),
-    importanceScore: clampScore(readNumber(record, "importanceScore")),
-    trustScore: clampScore(readNumber(record, "trustScore")),
-    reason: readString(record, "reason") || "模型未提供命中原因。",
-    sourceType: normalizeSourceType(readString(record, "sourceType")),
+    relevanceScore: clampScore(readFirstNumber(record, ["relevanceScore", "relevance_score", "score"]) ?? 0),
+    importanceScore: clampScore(readFirstNumber(record, ["importanceScore", "importance_score", "score"]) ?? 0),
+    trustScore: clampScore(
+      readFirstNumber(record, ["trustScore", "trust_score"]) ?? trustedSource?.weight ?? fallbackScore ?? 0,
+    ),
+    reason:
+      readString(record, "reason") ||
+      readString(record, "hitReason") ||
+      readString(record, "hit_reason") ||
+      "模型未提供命中原因。",
+    sourceType: inferSourceType(readString(record, "sourceType"), trustedSource),
     rawResponse: value,
   };
 }
@@ -473,10 +538,17 @@ function normalizeGeneratedInsight(value: unknown): RadarGeneratedInsight | null
 }
 
 // normalizeSearchResult 将结构化 JSON 转成仓储可保存的 RadarAiSearchResult。
-function normalizeSearchResult(value: unknown, rawResponse: unknown, elapsedMs: number): RadarAiSearchResult {
+function normalizeSearchResult(
+  value: unknown,
+  rawResponse: unknown,
+  elapsedMs: number,
+  trustedSources: RadarTrustedSource[],
+): RadarAiSearchResult {
   const record = isRecord(value) ? value : {};
   const items = Array.isArray(record.items)
-    ? record.items.map(normalizeSearchCandidate).filter((item): item is RadarSearchCandidate => item !== null)
+    ? record.items
+        .map((item) => normalizeSearchCandidate(item, trustedSources))
+        .filter((item): item is RadarSearchCandidate => item !== null)
     : [];
   const profileInsights = Array.isArray(record.profileInsights)
     ? record.profileInsights
@@ -566,7 +638,7 @@ export function createXaiRadarClient(options: XaiRadarClientOptions = {}): Radar
         true,
       );
 
-      return normalizeSearchResult(result.data, result.rawResponse, result.elapsedMs);
+      return normalizeSearchResult(result.data, result.rawResponse, result.elapsedMs, input.queryPlan.trustedSources);
     },
 
     async analyzeFeedback(input) {
