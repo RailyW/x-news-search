@@ -42,6 +42,17 @@ Chat Completions 模式构造以下关键字段：
 
 Chat Completions 模式不显式发送 `reasoning_effort` 或 `reasoning`。xAI 对 reasoning 模型未指定时默认使用低推理强度；省略该字段可以避免部分代理或兼容层同时注入 `reasoning.effort` 后触发参数冲突。
 
+## Radar 结构化调用
+
+`radar.ts` 是 MVP 2.0 的推荐/画像专用 xAI 客户端，和 `client.ts` 的单次报告搜索并行存在：
+
+- `createXaiRadarClient().search(...)`: 使用当前 stable/working profile、高可信源和搜索主题构造搜索提示，启用 X Search，并要求模型返回结构化 JSON。输出不是完整报告，而是 URL-first 的 feed items、summary、tag、评分、命中原因，以及少量可选 pending profile insights。
+- `createXaiRadarClient().analyzeFeedback(...)`: 不启用 X Search，只让模型解释用户对单条 feed item 的 like/dislike/save/hide，返回 working profile patch 和可选 pending insight。
+
+Responses 模式使用 `text.format.type = "json_schema"`；Chat Completions 模式使用 `response_format.type = "json_schema"`。这与 xAI 官方结构化输出文档保持一致，并且 xAI 文档说明结构化输出可以和服务端工具调用一起使用：[Structured Outputs](https://docs.x.ai/developers/model-capabilities/text/structured-outputs)。X Search 工具名和 `allowed_x_handles` 等参数来自 xAI 官方 X Search 文档：[X Search](https://docs.x.ai/developers/tools/x-search)。
+
+Radar 的 Chat Completions 模式仍不发送 `reasoning` 或 `reasoning_effort`，并使用 legacy `search_parameters` 请求 X 来源，避免再次触发 reasoning 参数冲突。
+
 ## 环境变量
 
 服务端请求只从服务端环境读取敏感配置，浏览器组件不能接触 API key。
@@ -61,6 +72,8 @@ Chat Completions 模式不显式发送 `reasoning_effort` 或 `reasoning`。xAI 
 - Chat Completions 模式从 `choices[].message.content` 拼接 `report`，并兼容可能出现的 `choices[].message.tool_calls`。
 - 从顶层 `citations`、顶层 `sources` 和 `output_text.annotations` 收集 URL。
 - 从 `usage` 读取 token、server-side tool 数量和 `cost_in_usd_ticks`，同时兼容 `input_tokens/output_tokens` 与 `prompt_tokens/completion_tokens`。
+
+`radar.ts` 解析结构化 JSON 后会再次做本地清理：丢弃缺少 URL/summary 的条目，限制评分到 0-1，清洗 profile patch，并把异常 `sourceType` 归为 `unknown`。
 
 ## 错误码
 

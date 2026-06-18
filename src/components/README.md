@@ -5,6 +5,7 @@
 ## 文件说明
 
 - `search-console.tsx`: 搜索台主交互组件，负责管理搜索输入、加载状态、成功结果、错误提示、引用链接、调用成本和原始响应展示。组件只调用本项目的 `/api/search` 服务端路由，不读取或保存 `XAI_API_KEY`、`XAI_BASE_URL`、`XAI_API_ENDPOINT` 等服务端环境变量。
+- `radar-dashboard.tsx`: Radar Feed MVP 2.0 主交互组件，负责读取 `/api/radar/state`、触发 `/api/radar/run`、提交 `/api/radar/feedback`，以及在待确认视图调用 `/api/radar/insights`。组件展示 URL、summary、模型评分、标签、命中原因、用户反馈状态、working/stable profile 和高可信源，不直接调用 xAI。
 - `ui/button.tsx`: 基础按钮组件，提供统一按钮样式和 variant/size 组合。
 - `ui/card.tsx`: 基础卡片组件，提供页面主要搜索面板的结构化容器。
 - `ui/input.tsx`: 基础输入框组件，提供搜索主题输入控件。
@@ -12,7 +13,7 @@
 
 ## 搜索台行为
 
-`SearchConsole` 会把用户输入修剪后以 JSON 请求发送到 `/api/search`。服务端路由根据 xAI 模块配置决定使用 Responses API 还是 Chat Completions API，前端只消费统一的 `SearchApiResponse` 结构。
+`SearchConsole` 会把用户输入修剪后以 JSON 请求发送到 `/api/search`。服务端路由根据 xAI 模块配置决定使用 Responses API 还是 Chat Completions API，前端只消费统一的 `SearchApiResponse` 结构。该组件仍保留用于单次搜索调试，但首页默认使用 `RadarDashboard`。
 
 组件展示层不区分底层 xAI endpoint，原因是两种 endpoint 已在服务端解析为相同字段：
 
@@ -25,3 +26,5 @@
 ## 安全边界
 
 浏览器组件不能接触 API key 或代理地址等敏感配置。任何 xAI 请求都必须经过服务端路由执行，避免密钥进入浏览器状态、网络面板或客户端 bundle。
+
+`RadarDashboard` 同样只和本地 API route 通信。用户画像、SQLite 文件路径、高可信源配置和 xAI 原始响应都留在服务端；浏览器只接收服务端整理后的 feed 状态和待确认建议。

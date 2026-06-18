@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "language": "zh-CN",
+  "stableProfile": {
+    "interests": [
+      {
+        "label": "AI Agent 与开发工具",
+        "weight": 0.9,
+        "reason": "关注 Codex、Claude Code、Grok CLI、开发者工作流等能直接提升工程效率的信息。"
+      },
+      {
+        "label": "大模型产品与 API 能力更新",
+        "weight": 0.8,
+        "reason": "关注模型能力、工具调用、搜索、成本和开发者生态变化。"
+      }
+    ],
+    "dislikes": [
+      {
+        "label": "无来源的二手爆料",
+        "weight": 0.6,
+        "reason": "MVP 应优先展示可点击原文和高可信来源。"
+      }
+    ],
+    "preferredSignals": [
+      {
+        "label": "官方账号或核心开发者发布",
+        "weight": 1,
+        "reason": "优先保留能追溯到原始发布者的 X 链接。"
+      },
+      {
+        "label": "包含具体产品、代码、文档或实验结果",
+        "weight": 0.75,
+        "reason": "避免只有观点没有信息增量的内容。"
+      }
+    ],
+    "notes": [
+      "展示时优先给出原文 URL 和能快速理解内容的中文 summary。",
+      "不要把一次搜索写成完整报告，先维护可反馈的高价值信息流。"
+    ]
+  },
+  "workingProfile": {
+    "interests": [],
+    "dislikes": [],
+    "preferredSignals": [],
+    "notes": []
+  },
+  "trustedSources": [
+    {
+      "handle": "OpenAI",
+      "label": "OpenAI",
+      "weight": 1,
+      "enabled": true,
+      "notes": "官方模型与 API 更新。"
+    },
+    {
+      "handle": "xai",
+      "label": "xAI",
+      "weight": 1,
+      "enabled": true,
+      "notes": "Grok 与 xAI API 更新。"
+    },
+    {
+      "handle": "vercel",
+      "label": "Vercel",
+      "weight": 0.7,
+      "enabled": true,
+      "notes": "AI SDK、前端部署与开发者工具生态。"
+    }
+  ],
+  "searchTopics": [
+    {
+      "id": "ai-agent-devtools",
+      "label": "AI Agent 与开发工具",
+      "query": "AI coding agent OR Codex OR Claude Code OR Grok CLI OR agentic coding",
+      "enabled": true,
+      "cadence": "manual",
+      "lookbackDays": 7
+    },
+    {
+      "id": "xai-openai-api",
+      "label": "大模型 API 与搜索工具",
+      "query": "xAI API OR OpenAI API OR Responses API OR X Search tool OR structured outputs",
+      "enabled": true,
+      "cadence": "manual",
+      "lookbackDays": 7
+    }
+  ]
+}
