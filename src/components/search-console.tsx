@@ -203,7 +203,7 @@ export function SearchConsole() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle>搜索台</CardTitle>
-            <CardDescription>服务端直接请求 xAI Responses API，并验证 x_search_call。</CardDescription>
+            <CardDescription>服务端按环境变量配置请求 xAI，并返回统一搜索报告。</CardDescription>
           </div>
           <Badge variant={state === "error" ? "destructive" : state === "success" ? "default" : "secondary"}>
             {state === "loading" ? "running" : state}
@@ -235,7 +235,7 @@ export function SearchConsole() {
 
         {state === "loading" ? (
           <div className="rounded-md border bg-background p-4 text-sm text-muted-foreground">
-            正在调用 xAI Responses API...
+            正在调用 xAI 搜索服务...
           </div>
         ) : null}
 

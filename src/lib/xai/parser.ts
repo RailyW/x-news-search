@@ -22,6 +22,18 @@ function readNumber(record: Record<string, unknown>, key: string): number | unde
   return typeof value === "number" ? value : undefined;
 }
 
+// readFirstNumber 按优先级读取多个候选数字字段，兼容 Responses 与 Chat Completions 的 usage 命名差异。
+function readFirstNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = readNumber(record, key);
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 // getOutputItems 获取 Responses API 的 output 数组，格式不匹配时返回空数组。
 function getOutputItems(rawResponse: unknown): unknown[] {
   if (!isRecord(rawResponse) || !Array.isArray(rawResponse.output)) {
@@ -88,7 +100,7 @@ function pushCitation(citations: SearchCitation[], citation: SearchCitation) {
   }
 }
 
-// extractTopLevelCitations 提取 Responses API 顶层 citations 字段中的 URL。
+// extractTopLevelCitations 提取顶层 citations 字段中的 URL，Responses 和 Chat Completions 都可能返回该字段。
 function extractTopLevelCitations(rawResponse: unknown, citations: SearchCitation[]) {
   if (!isRecord(rawResponse) || !Array.isArray(rawResponse.citations)) {
     return;
@@ -110,6 +122,27 @@ function extractTopLevelCitations(rawResponse: unknown, citations: SearchCitatio
           endIndex: readNumber(citation, "end_index"),
         });
       }
+    }
+  }
+}
+
+// extractTopLevelSources 提取部分 Chat Completions 兼容响应中的 sources URL。
+function extractTopLevelSources(rawResponse: unknown, citations: SearchCitation[]) {
+  if (!isRecord(rawResponse) || !Array.isArray(rawResponse.sources)) {
+    return;
+  }
+
+  for (const source of rawResponse.sources) {
+    if (!isRecord(source)) {
+      continue;
+    }
+
+    const url = readString(source, "url");
+    if (url) {
+      pushCitation(citations, {
+        url,
+        title: readString(source, "title"),
+      });
     }
   }
 }
@@ -145,11 +178,12 @@ function extractAnnotationCitations(outputItems: unknown[], citations: SearchCit
   }
 }
 
-// extractCitations 汇总顶层 citations 和 output_text annotations 中的引用 URL。
+// extractCitations 汇总顶层 citations/sources 和 output_text annotations 中的引用 URL。
 function extractCitations(rawResponse: unknown, outputItems: unknown[]): SearchCitation[] {
   const citations: SearchCitation[] = [];
 
   extractTopLevelCitations(rawResponse, citations);
+  extractTopLevelSources(rawResponse, citations);
   extractAnnotationCitations(outputItems, citations);
 
   return citations;
@@ -162,12 +196,76 @@ function extractUsage(rawResponse: unknown): SearchUsage | undefined {
   }
 
   return {
-    inputTokens: readNumber(rawResponse.usage, "input_tokens"),
-    outputTokens: readNumber(rawResponse.usage, "output_tokens"),
+    inputTokens: readFirstNumber(rawResponse.usage, ["input_tokens", "prompt_tokens"]),
+    outputTokens: readFirstNumber(rawResponse.usage, ["output_tokens", "completion_tokens"]),
     totalTokens: readNumber(rawResponse.usage, "total_tokens"),
     numServerSideToolsUsed: readNumber(rawResponse.usage, "num_server_side_tools_used"),
     costUsdTicks: readNumber(rawResponse.usage, "cost_in_usd_ticks"),
   };
+}
+
+// getChatChoices 获取 Chat Completions 的 choices 数组，格式不匹配时返回空数组。
+function getChatChoices(rawResponse: unknown): unknown[] {
+  if (!isRecord(rawResponse) || !Array.isArray(rawResponse.choices)) {
+    return [];
+  }
+
+  return rawResponse.choices;
+}
+
+// extractChatReport 从 choices[].message.content 中提取最终回复文本。
+function extractChatReport(choices: unknown[]): string {
+  const textParts: string[] = [];
+
+  for (const choice of choices) {
+    if (!isRecord(choice) || !isRecord(choice.message)) {
+      continue;
+    }
+
+    const content = choice.message.content;
+    if (typeof content === "string" && content.trim()) {
+      textParts.push(content);
+      continue;
+    }
+
+    if (!Array.isArray(content)) {
+      continue;
+    }
+
+    for (const contentItem of content) {
+      if (!isRecord(contentItem)) {
+        continue;
+      }
+
+      const text = readString(contentItem, "text");
+      if (text) {
+        textParts.push(text);
+      }
+    }
+  }
+
+  return textParts.join("\n\n").trim();
+}
+
+// extractChatToolCalls 提取 Chat Completions 里可能存在的 tool_calls，兼容未来 xAI 返回工具细节的情况。
+function extractChatToolCalls(choices: unknown[]): SearchToolCall[] {
+  const toolCalls: SearchToolCall[] = [];
+
+  for (const choice of choices) {
+    if (!isRecord(choice) || !isRecord(choice.message) || !Array.isArray(choice.message.tool_calls)) {
+      continue;
+    }
+
+    for (const toolCall of choice.message.tool_calls) {
+      toolCalls.push({
+        type: "chat_tool_call",
+        status: readString(choice, "finish_reason"),
+        raw: toolCall,
+      });
+    }
+  }
+
+  return toolCalls;
 }
 
 // parseXaiResponse 把 xAI 原始响应转换成前端稳定消费的成功结构或业务错误。
@@ -214,6 +312,46 @@ export function parseXaiResponse(rawResponse: unknown): XaiParsedResponse {
     report,
     citations: extractCitations(rawResponse, outputItems),
     toolCalls,
+    usage: extractUsage(rawResponse),
+  };
+}
+
+// parseXaiChatCompletionResponse 把 Chat Completions 原始响应转换成前端稳定消费结构。
+// Chat 接口没有 Responses 的 x_search_call 输出项，因此这里只要求存在最终文本，并尽量提取引用和 usage。
+export function parseXaiChatCompletionResponse(rawResponse: unknown): XaiParsedResponse {
+  if (!isRecord(rawResponse)) {
+    return {
+      ok: false,
+      code: "xai_invalid_response",
+      message: "xAI Chat Completions 返回格式不是对象。",
+    };
+  }
+
+  const choices = getChatChoices(rawResponse);
+  if (choices.length === 0) {
+    return {
+      ok: false,
+      code: "xai_invalid_response",
+      message: "xAI Chat Completions 返回中缺少 choices 数组。",
+    };
+  }
+
+  const report = extractChatReport(choices);
+  if (!report) {
+    return {
+      ok: false,
+      code: "no_report_text",
+      message: "xAI Chat Completions 没有返回最终报告文本。",
+    };
+  }
+
+  return {
+    ok: true,
+    responseId: readString(rawResponse, "id") ?? "",
+    model: readString(rawResponse, "model") ?? "",
+    report,
+    citations: extractCitations(rawResponse, []),
+    toolCalls: extractChatToolCalls(choices),
     usage: extractUsage(rawResponse),
   };
 }

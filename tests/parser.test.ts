@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseXaiResponse } from "@/lib/xai/parser";
+import { parseXaiChatCompletionResponse, parseXaiResponse } from "@/lib/xai/parser";
 
 // buildSuccessfulFixture 构造最小成功响应，便于多个解析测试复用。
 function buildSuccessfulFixture() {
@@ -96,5 +96,46 @@ describe("parseXaiResponse", () => {
     }
 
     expect(parsed.code).toBe("xai_invalid_response");
+  });
+});
+
+describe("parseXaiChatCompletionResponse", () => {
+  it("能从 Chat Completions 响应中提取报告、引用和 usage", () => {
+    const parsed = parseXaiChatCompletionResponse({
+      id: "chatcmpl_123",
+      model: "grok-4.3",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "Chat 接口报告",
+          },
+        },
+      ],
+      citations: [
+        {
+          url: "https://x.com/test/status/2",
+          title: "X 帖子",
+        },
+      ],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 8,
+        total_tokens: 18,
+        cost_in_usd_ticks: 1000,
+      },
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      throw new Error("Chat Completions fixture 应当解析成功。");
+    }
+
+    expect(parsed.responseId).toBe("chatcmpl_123");
+    expect(parsed.report).toBe("Chat 接口报告");
+    expect(parsed.citations[0]?.url).toBe("https://x.com/test/status/2");
+    expect(parsed.usage?.inputTokens).toBe(10);
+    expect(parsed.usage?.outputTokens).toBe(8);
+    expect(parsed.toolCalls).toEqual([]);
   });
 });

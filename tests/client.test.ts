@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { searchXNews } from "@/lib/xai/client";
 
@@ -13,6 +13,10 @@ function createJsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 describe("searchXNews", () => {
+  beforeEach(() => {
+    vi.stubEnv("XAI_API_ENDPOINT", "responses");
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -78,6 +82,49 @@ describe("searchXNews", () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledWith("https://gateway.example.com/xai/v1/responses", expect.any(Object));
+  });
+
+  it("XAI_API_ENDPOINT=chat_completions 时请求 Chat Completions 接口", async () => {
+    vi.stubEnv("XAI_BASE_URL", "https://gateway.example.com/xai/v1/");
+    vi.stubEnv("XAI_API_ENDPOINT", "chat_completions");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        id: "chatcmpl_123",
+        model: "grok-4.3",
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "Chat 接口报告",
+            },
+          },
+        ],
+      }),
+    );
+
+    await searchXNews("xAI", {
+      apiKey: "test-key",
+      fetchImpl,
+    });
+
+    const requestInit = fetchImpl.mock.calls[0]?.[1];
+    const requestBody = JSON.parse(String(requestInit?.body));
+
+    expect(fetchImpl).toHaveBeenCalledWith("https://gateway.example.com/xai/v1/chat/completions", expect.any(Object));
+    expect(requestBody.input).toBeUndefined();
+    expect(requestBody.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: expect.stringContaining("xAI"),
+        }),
+      ]),
+    );
+    expect(requestBody.search_parameters).toEqual({
+      mode: "on",
+      return_citations: true,
+      sources: [{ type: "x" }],
+    });
   });
 
   it("成功响应会包含查询、报告和 x_search_call", async () => {

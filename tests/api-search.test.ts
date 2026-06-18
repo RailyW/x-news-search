@@ -41,6 +41,7 @@ describe("/api/search route", () => {
 
   it("成功返回统一 SearchSuccessResponse", async () => {
     vi.stubEnv("XAI_API_KEY", "test-key");
+    vi.stubEnv("XAI_API_ENDPOINT", "responses");
     vi.stubGlobal(
       "fetch",
       vi.fn<typeof fetch>().mockResolvedValue(

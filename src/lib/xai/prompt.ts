@@ -1,4 +1,4 @@
-import type { XaiResponsesRequest } from "./types";
+import type { XaiChatCompletionsRequest, XaiMessageInput, XaiResponsesRequest } from "./types";
 
 const DEFAULT_MODEL = "grok-4.3";
 const MAX_TURNS = 3;
@@ -15,7 +15,7 @@ export function resolveModel(model?: string) {
 }
 
 // buildSearchPrompt 生成固定中文任务提示，避免前端直接拼接复杂系统指令。
-export function buildSearchPrompt(query: string): XaiResponsesRequest["input"] {
+export function buildSearchPrompt(query: string): XaiMessageInput[] {
   return [
     {
       role: "system",
@@ -45,5 +45,25 @@ export function buildResponsesRequest(query: string, model?: string): XaiRespons
         type: "x_search",
       },
     ],
+  };
+}
+
+// buildChatCompletionsRequest 构造 legacy Chat Completions 请求体。
+// Chat 接口没有 Responses API 的 x_search_call 输出项，因此这里使用旧版 search_parameters 强制搜索 X 数据源。
+export function buildChatCompletionsRequest(query: string, model?: string): XaiChatCompletionsRequest {
+  return {
+    model: resolveModel(model),
+    stream: false,
+    reasoning_effort: "low",
+    messages: buildSearchPrompt(query),
+    search_parameters: {
+      mode: "on",
+      return_citations: true,
+      sources: [
+        {
+          type: "x",
+        },
+      ],
+    },
   };
 }

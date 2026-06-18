@@ -19,7 +19,7 @@ export type SearchCitation = {
 };
 
 export type SearchToolCall = {
-  type: "x_search_call";
+  type: "x_search_call" | "chat_tool_call";
   status?: string;
   raw: unknown;
 };
@@ -60,6 +60,8 @@ export type XaiMessageInput = {
   content: string;
 };
 
+export type XaiApiEndpoint = "responses" | "chat_completions";
+
 export type XaiResponsesRequest = {
   model: string;
   store: false;
@@ -72,6 +74,20 @@ export type XaiResponsesRequest = {
   tools: Array<{
     type: "x_search";
   }>;
+};
+
+export type XaiChatCompletionsRequest = {
+  model: string;
+  stream: false;
+  reasoning_effort: "low";
+  messages: XaiMessageInput[];
+  search_parameters: {
+    mode: "on";
+    return_citations: true;
+    sources: Array<{
+      type: "x";
+    }>;
+  };
 };
 
 export type XaiParsedSuccess = {
@@ -96,9 +112,11 @@ export type XaiParsedResponse = XaiParsedSuccess | XaiParsedFailure;
 export type XaiClientOptions = {
   // apiKey 覆盖服务端环境变量 XAI_API_KEY，主要用于测试或内部服务端调用。
   apiKey?: string;
-  // baseUrl 覆盖服务端环境变量 XAI_BASE_URL，可传 xAI API 根地址或完整 responses 地址。
+  // baseUrl 覆盖服务端环境变量 XAI_BASE_URL，可传 xAI API 根地址或完整 endpoint 地址。
   baseUrl?: string;
-  // model 覆盖服务端环境变量 XAI_MODEL，用于切换 Responses API 调用模型。
+  // apiEndpoint 覆盖服务端环境变量 XAI_API_ENDPOINT，用于在 Responses 与 Chat Completions 间切换。
+  apiEndpoint?: XaiApiEndpoint;
+  // model 覆盖服务端环境变量 XAI_MODEL，用于切换 xAI 调用模型。
   model?: string;
   // timeoutMs 覆盖服务端环境变量 XAI_TIMEOUT_MS，用于控制单次搜索请求最长等待时间。
   timeoutMs?: number;
