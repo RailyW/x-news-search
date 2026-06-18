@@ -50,11 +50,11 @@ export function buildResponsesRequest(query: string, model?: string): XaiRespons
 
 // buildChatCompletionsRequest 构造 legacy Chat Completions 请求体。
 // Chat 接口没有 Responses API 的 x_search_call 输出项，因此这里使用旧版 search_parameters 强制搜索 X 数据源。
+// 不显式发送 reasoning 参数，避免与 xAI 或代理层自动注入的 reasoning.effort 产生冲突。
 export function buildChatCompletionsRequest(query: string, model?: string): XaiChatCompletionsRequest {
   return {
     model: resolveModel(model),
     stream: false,
-    reasoning_effort: "low",
     messages: buildSearchPrompt(query),
     search_parameters: {
       mode: "on",

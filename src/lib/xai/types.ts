@@ -79,7 +79,6 @@ export type XaiResponsesRequest = {
 export type XaiChatCompletionsRequest = {
   model: string;
   stream: false;
-  reasoning_effort: "low";
   messages: XaiMessageInput[];
   search_parameters: {
     mode: "on";

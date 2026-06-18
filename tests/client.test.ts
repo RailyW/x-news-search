@@ -112,6 +112,8 @@ describe("searchXNews", () => {
 
     expect(fetchImpl).toHaveBeenCalledWith("https://gateway.example.com/xai/v1/chat/completions", expect.any(Object));
     expect(requestBody.input).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
+    expect(requestBody.reasoning_effort).toBeUndefined();
     expect(requestBody.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

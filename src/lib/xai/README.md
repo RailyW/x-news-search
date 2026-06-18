@@ -35,11 +35,12 @@ Chat Completions 模式构造以下关键字段：
 
 - `model`: 默认 `grok-4.3`，可用 `XAI_MODEL` 覆盖。
 - `stream: false`: 当前 API 路由只处理同步 JSON。
-- `reasoning_effort: "low"`: 与 Responses 模式保持低推理成本口径。
 - `messages`: 复用同一组中文 system/user 搜索提示。
 - `search_parameters.mode: "on"`: 请求 legacy live search。
 - `search_parameters.return_citations: true`: 要求返回引用信息。
 - `search_parameters.sources: [{ type: "x" }]`: 限定搜索来源为 X。
+
+Chat Completions 模式不显式发送 `reasoning_effort` 或 `reasoning`。xAI 对 reasoning 模型未指定时默认使用低推理强度；省略该字段可以避免部分代理或兼容层同时注入 `reasoning.effort` 后触发参数冲突。
 
 ## 环境变量
 
