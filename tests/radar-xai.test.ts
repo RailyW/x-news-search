@@ -112,6 +112,33 @@ describe("createXaiRadarClient", () => {
     });
   });
 
+  it("Responses 模式能解析模型返回的 fenced JSON", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: `\`\`\`json\n${JSON.stringify(searchPayload)}\n\`\`\``,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const client = createXaiRadarClient({
+      apiKey: "test-key",
+      apiEndpoint: "responses",
+      fetchImpl,
+    });
+
+    const result = await client.search(radarInput);
+
+    expect(result.items[0]?.url).toBe("https://x.com/openai/status/1");
+  });
+
   it("Chat 模式会使用 response_format 和 search_parameters，且不发送 reasoning 字段", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       createJsonResponse({

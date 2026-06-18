@@ -397,12 +397,25 @@ function extractChatText(rawResponse: unknown) {
 // parseStructuredJson 根据 endpoint 差异提取并解析模型的结构化 JSON 文本。
 function parseStructuredJson(rawResponse: unknown, endpoint: XaiApiEndpoint) {
   const text = endpoint === "chat_completions" ? extractChatText(rawResponse) : extractResponsesText(rawResponse);
+  const jsonText = extractJsonText(text);
 
-  if (!text) {
+  if (!jsonText) {
     throw new Error("xAI Radar 响应中没有可解析的结构化文本。");
   }
 
-  return JSON.parse(text) as unknown;
+  return JSON.parse(jsonText) as unknown;
+}
+
+// extractJsonText 兼容模型偶尔把结构化 JSON 包在 ```json fenced block 里的情况。
+function extractJsonText(text: string) {
+  const trimmedText = text.trim();
+  const fencedMatch = trimmedText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  return trimmedText;
 }
 
 // normalizeSourceType 校验 sourceType 枚举，异常值统一归为 unknown。
