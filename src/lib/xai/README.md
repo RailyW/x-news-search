@@ -29,6 +29,15 @@ xAI 官方推荐使用 Responses API 承载新能力。相比 legacy Chat Comple
 - `reasoning.effort: "low"`: 保持稳定工具调用，同时避免 MVP 成本过高。
 - `tools: [{ type: "x_search" }]`: 只启用 X Search。
 
+## 环境变量
+
+服务端请求只从服务端环境读取敏感配置，浏览器组件不能接触 API key。
+
+- `XAI_API_KEY`: 必填，xAI API key。
+- `XAI_BASE_URL`: 可选，xAI API 根地址，默认 `https://api.x.ai/v1`。如果使用代理或兼容网关，可改为对应根地址；如果传入地址已经以 `/responses` 结尾，客户端不会重复拼接。
+- `XAI_MODEL`: 可选，默认 `grok-4.3`。
+- `XAI_TIMEOUT_MS`: 可选，默认 `90000`，小于 1000 或非法值会回退到默认值。
+
 ## 响应解析
 
 `parser.ts` 只输出前端稳定字段：

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { searchXNews } from "@/lib/xai/client";
 
@@ -13,6 +13,10 @@ function createJsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 describe("searchXNews", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("缺少 API key 时返回 missing_api_key", async () => {
     const result = await searchXNews("xAI", { apiKey: "" });
 
@@ -41,6 +45,39 @@ describe("searchXNews", () => {
 
     expect(result.code).toBe("xai_http_error");
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("XAI_BASE_URL 会覆盖默认请求根地址并自动拼接 responses 路径", async () => {
+    vi.stubEnv("XAI_BASE_URL", "https://gateway.example.com/xai/v1/");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        id: "resp_base_url",
+        model: "grok-4.3",
+        output: [
+          {
+            type: "x_search_call",
+            status: "completed",
+          },
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: "自定义地址报告",
+                annotations: [],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await searchXNews("xAI", {
+      apiKey: "test-key",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("https://gateway.example.com/xai/v1/responses", expect.any(Object));
   });
 
   it("成功响应会包含查询、报告和 x_search_call", async () => {

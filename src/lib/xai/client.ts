@@ -2,8 +2,27 @@ import { buildResponsesRequest } from "./prompt";
 import { parseXaiResponse } from "./parser";
 import type { SearchApiResponse, XaiClientOptions } from "./types";
 
-const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
+const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
+const XAI_RESPONSES_PATH = "responses";
 const DEFAULT_TIMEOUT_MS = 90_000;
+
+// trimTrailingSlashes 移除 base URL 末尾的斜杠，保证后续拼接 endpoint 时不会出现双斜杠。
+function trimTrailingSlashes(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+// resolveResponsesUrl 根据调用参数或环境变量生成最终 Responses API 地址。
+// 允许调用方传入根地址（如 https://api.x.ai/v1）或完整 responses 地址，便于兼容代理网关。
+function resolveResponsesUrl(baseUrl?: string) {
+  const configuredBaseUrl = baseUrl?.trim();
+  const normalizedBaseUrl = trimTrailingSlashes(configuredBaseUrl || DEFAULT_XAI_BASE_URL);
+
+  if (normalizedBaseUrl.endsWith(`/${XAI_RESPONSES_PATH}`)) {
+    return normalizedBaseUrl;
+  }
+
+  return `${normalizedBaseUrl}/${XAI_RESPONSES_PATH}`;
+}
 
 // resolveTimeoutMs 解析超时时间，非法或过小的值回退到默认 90 秒。
 function resolveTimeoutMs(value?: number | string) {
@@ -77,13 +96,14 @@ export async function searchXNews(query: string, options: XaiClientOptions = {})
   const model = options.model ?? process.env.XAI_MODEL;
   const timeoutMs = resolveTimeoutMs(options.timeoutMs ?? process.env.XAI_TIMEOUT_MS);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const responsesUrl = resolveResponsesUrl(options.baseUrl ?? process.env.XAI_BASE_URL);
   const requestBody = buildResponsesRequest(trimmedQuery, model);
   const controller = new AbortController();
   const startedAt = Date.now();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetchImpl(XAI_RESPONSES_URL, {
+    const response = await fetchImpl(responsesUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

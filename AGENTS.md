@@ -1,5 +1,15 @@
 # Repository Guidelines
 
+## 命令要求
+
+用户已授权在本仓库内按任务需要自动执行 git 指令，包括但不限于 `git add`、`git commit`、`git push`、`git switch`、`git checkout` 等，无需每次额外请求手动确认。
+
+当一个任务完成并通过必要验证后，应当自动将本次任务相关变更提交，并推送到当前分支对应的远程分支；提交范围必须限于本次任务产生或明确需要纳入的文件。
+
+用户对于自身的仓库的 git 树有绝对的所有权。执行 git 操作前应当检查工作区状态，避免覆盖、回滚、删除或提交与当前任务无关的用户改动；确需执行可能丢弃已有改动的破坏性操作时，必须先取得用户明确授权。
+
+用户对自己所处的分支有绝对的选择权，在 main 分支上做修改是被允许的。
+
 ## Project Structure & Module Organization
 
 This repository is currently empty, so new contributors should establish a small, predictable layout as code is added. Place application source in `src/`, automated tests in `tests/`, reusable static files in `assets/`, and project documentation in `docs/`. Keep configuration files such as `.env.example`, lint configs, and build configs at the repository root. If the project grows into multiple packages, use clear paths such as `packages/api/` and `packages/web/`.
